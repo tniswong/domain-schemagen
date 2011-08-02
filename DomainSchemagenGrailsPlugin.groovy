@@ -1,6 +1,6 @@
 class DomainSchemagenGrailsPlugin {
     // the plugin version
-    def version = "0.1"
+    def version = "1.0"
     // the version or versions of Grails the plugin is designed for
     def grailsVersion = "1.3.7 > *"
     // the other plugins this plugin depends on
@@ -14,9 +14,7 @@ class DomainSchemagenGrailsPlugin {
     def author = "Todd Niswonger"
     def authorEmail = "tniswong@gmail.com"
     def title = "Domain Schemagen"
-    def description = '''\\
-Automatically generate an XML Schema from your domain classes.
-'''
+    def description = "Automatically generate an XML Schema from your domain classes."
 
     // URL to the plugin's documentation
     def documentation = "http://grails.org/plugin/domain-schemagen"
