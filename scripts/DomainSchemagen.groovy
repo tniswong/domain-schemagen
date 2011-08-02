@@ -30,9 +30,12 @@ ant.taskdef (name : 'groovyc', classname : 'org.codehaus.groovy.ant.Groovyc')
  * The Default target
  */
 target(main: "Default Target") {
+
     depends(checkEnv,parseArguments)
 
     outputDir = argsMap["outputDir"] ?: "${grailsSettings.baseDir}/web-app/schemas"
+    srcDir = argsMap["srcDir"] ?: domainDir
+
     pkg = argsMap["pkg"]
     classes = argsMap["classes"]
 
@@ -41,15 +44,24 @@ target(main: "Default Target") {
     } else {
         domainSchemagen()
     }
+
 }
 
 target(domainSchemagen: "Generates schemas with schemagen from grails domain classes") {
 
     depends(cleanWork,compileDomain,jarDomain)
 
-    Map<String,List<String>> packagedClasses = buildClassPackageMap(new File("${domainDir}"))
+    Map<String,List<String>> packagedClasses = buildClassPackageMap(new File("${srcDir}"))
+
+    def classList = ((String)classes)?.split(",")
 
     packagedClasses.each {
+
+        ant.mkdir(dir : workSchemaDir)
+
+        def key = it.key
+        def value = it.value
+
         if(!pkg || it.key in ((String)pkg)?.split(",")) {
 
             // fully qualified classes in package
@@ -58,22 +70,32 @@ target(domainSchemagen: "Generates schemas with schemagen from grails domain cla
             // string of all fully qualified classes in package, delimited by space
             line = ""
             fullyQualifiedClasses.each {
-                if(!classes || it)
-                line += it + " ";
+
+                // each class unless specific classes are specified
+                if(!classes) {
+                    line += it + " ";
+                } else {
+                    if(it in classList) {
+                        line += it + " ";
+                    }
+                }
+
             }
 
             // exec schemagen
             if(!"".equals(line)) {
 
-                event("StatusUpdate",["Generating schema(s) for package: '" + it.key + "' containing classes: " + it.value])
-
-                ant.exec(executable : "${schemagenExe}", dir : "${workDir}", output: null) {
-                    arg(line : "-classpath temp.jar ${line} -d ${workDir}/schemas/")
+                ant.exec(executable : "${schemagenExe}", dir : "${workDir}") {
+                    arg(line : "-classpath temp.jar ${line} -d ${workSchemaDir}")
                 }
 
-                filename = defaultPackageName.equals(it.key) ? "defaultPackage" : it.key
+                filename = defaultPackageName.equals(key) ? "defaultPackage" : key
 
-                ant.move(file: "${workSchemaDir}", toDir: "${outputDir}/${filename.replace(".","/")}")
+                ant.move(toDir: "${outputDir}/${filename.replace(".","/")}") {
+                    fileset(dir:"${workSchemaDir}") {
+                        include(name:"*.xsd")
+                    }
+                }
             }
 
         }
@@ -97,10 +119,8 @@ target(cleanWork: "Cleans up") {
 }
 
 target(compileDomain: "Compiles the domain classes") {
-
-    ant.mkdir(dir : workSchemaDir)
-    groovyc(srcdir : domainDir, destdir : workDir)
-
+    ant.mkdir(dir : workDir)
+    groovyc(srcdir : srcDir, destdir : workDir)
 }
 
 target(jarDomain: "Jar the domain classes so we can run schemagen") {
@@ -114,10 +134,10 @@ Grails domain-schemagen Plugin
 
 Available Options:
 
--outputDir=      Override the default output directory.
--pkg=        Specify specific packages for schemagen, multiples separated by comma.
-NYI -classes=    Specify specific classes for schemagen, multiples separated by comma. Must be fully qualified class names if not used with -pkg.
-NYI -srcDir=     Specify alternate directory for Groovy source. Yes, that means you're not limited to Domain classes!
+-outputDir=     Override the default output directory.
+-pkg=           Specify specific packages for schemagen, multiples separated by comma. Cannot use with -classes=
+-classes=       Specify specific classes for schemagen, multiples separated by comma. Cannot use with -pkg=
+-srcDir=        Specify alternate directory for Groovy source. Yes, that means you're not limited to Domain classes!
 '''
 
 }
@@ -171,18 +191,26 @@ private Map<String,List<String>> traverseDirectories(File f, Map<String,List<Str
 
     if(f.isDirectory()) {
 
-        String path = f.absolutePath.replace("${domainDir}","").replace("\\", "/")
+        // find package directory root by stripping out srcDir. replace any \ with /
+        String path = f.absolutePath.replace("${srcDir}","").replace("\\", "/")
 
+        // give the root package a name
         if("".equals(path)) {
             path = defaultPackageName
         } else {
-            path = path.substring(1).replace("/",".")
+            // strip the leading slash if necessary
+            if(path[0] == "/") {
+                path = path?.substring(1)
+            }
+            // replace directory notation (/) with class notation (.)
+            path = path?.replace("/",".")
         }
 
         map.put(path, getClassesForDirectory(f))
 
     }
 
+    // traverse each sub directory
     f.listFiles().each {
         if(it.isDirectory()) {
              traverseDirectories(it,map)
